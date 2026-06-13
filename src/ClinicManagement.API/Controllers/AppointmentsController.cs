@@ -6,10 +6,12 @@ using ClinicManagement.Application.Appointments.Commands.ScheduleAppointment;
 using ClinicManagement.Application.Appointments.Queries.GetAppointmentById;
 using ClinicManagement.Application.Appointments.Queries.GetAppointments;
 using ClinicManagement.Domain.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicManagement.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class AppointmentsController : ControllerBase

@@ -2,10 +2,12 @@ using ClinicManagement.Application.Common.DTOs;
 using ClinicManagement.Application.Patients.Commands.CreatePatient;
 using ClinicManagement.Application.Patients.Queries.GetPatientById;
 using ClinicManagement.Application.Patients.Queries.GetPatients;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicManagement.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PatientsController : ControllerBase

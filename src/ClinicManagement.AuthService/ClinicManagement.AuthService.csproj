@@ -7,18 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.9" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ClinicManagement.Application\ClinicManagement.Application.csproj" />
-    <ProjectReference Include="..\ClinicManagement.Infrastructure\ClinicManagement.Infrastructure.csproj" />
     <ProjectReference Include="..\ClinicManagement.Shared\ClinicManagement.Shared.csproj" />
   </ItemGroup>
 

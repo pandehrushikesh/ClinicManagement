@@ -481,3 +481,4 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 appsettings.Development.json
+src/ClinicManagement.AuthService/appsettings.Development.json

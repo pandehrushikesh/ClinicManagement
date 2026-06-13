@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/ClinicManagement.API/ClinicManagement.API.csproj" />
     <Project Path="src/ClinicManagement.Application/ClinicManagement.Application.csproj" />
+    <Project Path="src/ClinicManagement.AuthService/ClinicManagement.AuthService.csproj" />
     <Project Path="src/ClinicManagement.Domain/ClinicManagement.Domain.csproj" />
     <Project Path="src/ClinicManagement.Infrastructure/ClinicManagement.Infrastructure.csproj" />
     <Project Path="src/ClinicManagement.Shared/ClinicManagement.Shared.csproj" />
