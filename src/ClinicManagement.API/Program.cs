@@ -1,4 +1,5 @@
 using ClinicManagement.API.Middleware;
+using Scalar.AspNetCore;
 using ClinicManagement.Application.Appointments.Commands.CancelAppointment;
 using ClinicManagement.Application.Appointments.Commands.CompleteAppointment;
 using ClinicManagement.Application.Appointments.Commands.ConfirmAppointment;
@@ -46,7 +47,14 @@ var app = builder.Build();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
+{
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.Title = "Clinic Management API";
+        options.Theme = ScalarTheme.Purple;
+    });
+}
 
 app.UseHttpsRedirection();
 app.MapControllers();
