@@ -51,7 +51,7 @@ services:
       context: .
       dockerfile: src/ClinicManagement.AuthService/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=ClinicManagement_Auth;User Id=sa;Password=ClinicMgmt_Dev#2026;Encrypt=True;TrustServerCertificate=True;"
       JwtSettings__Secret: "SuperSecretKeyForClinicManagementSystem2026!"
       JwtSettings__Issuer: "ClinicManagement.AuthService"
@@ -68,7 +68,7 @@ services:
       context: .
       dockerfile: src/ClinicManagement.API/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=ClinicManagement;User Id=sa;Password=ClinicMgmt_Dev#2026;Encrypt=True;TrustServerCertificate=True;"
       ConnectionStrings__Redis: "redis:6379"
       JwtSettings__Secret: "SuperSecretKeyForClinicManagementSystem2026!"
@@ -93,7 +93,7 @@ services:
       context: .
       dockerfile: src/ClinicManagement.NotificationService/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       RabbitMQ__Host: "rabbitmq"
       RabbitMQ__Username: "guest"
       RabbitMQ__Password: "guest"
