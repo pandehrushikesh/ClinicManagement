@@ -7,18 +7,27 @@ namespace ClinicManagement.Application.Appointments.Queries.GetAppointmentById;
 
 public class GetAppointmentByIdQueryHandler
 {
-    private readonly IAppointmentRepository _appointments;
+    private readonly IAppointmentReadRepository _readRepository;
+    private readonly ICacheService _cache;
 
-    public GetAppointmentByIdQueryHandler(IAppointmentRepository appointments)
+    public GetAppointmentByIdQueryHandler(IAppointmentReadRepository readRepository, ICacheService cache)
     {
-        _appointments = appointments;
+        _readRepository = readRepository;
+        _cache = cache;
     }
 
     public async Task<AppointmentDto> Handle(GetAppointmentByIdQuery query, CancellationToken cancellationToken = default)
     {
-        var appointment = await _appointments.GetByIdAsync(query.Id, cancellationToken)
+        var cacheKey = $"appointments:{query.Id}";
+
+        var cached = await _cache.GetAsync<AppointmentDto>(cacheKey, cancellationToken);
+        if (cached is not null)
+            return cached;
+
+        var appointment = await _readRepository.GetByIdAsync(query.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(Appointment), query.Id);
 
-        return appointment.ToDto();
+        await _cache.SetAsync(cacheKey, appointment, TimeSpan.FromMinutes(5), cancellationToken);
+        return appointment;
     }
 }

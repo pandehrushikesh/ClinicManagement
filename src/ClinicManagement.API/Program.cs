@@ -11,6 +11,7 @@ using ClinicManagement.Application.Common.Interfaces;
 using ClinicManagement.Application.Patients.Commands.CreatePatient;
 using ClinicManagement.Application.Patients.Queries.GetPatientById;
 using ClinicManagement.Application.Patients.Queries.GetPatients;
+using ClinicManagement.Infrastructure.Caching;
 using ClinicManagement.Infrastructure.Messaging;
 using ClinicManagement.Infrastructure.Persistence;
 using ClinicManagement.Infrastructure.Repositories;
@@ -71,10 +72,20 @@ builder.Services.AddMassTransit(x =>
 });
 builder.Services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
+// Redis cache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis")
+        ?? "localhost:6379";
+});
+builder.Services.AddScoped<ICacheService, RedisCacheService>();
+
 // Repositories
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IDoctorRepository, DoctorRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<IPatientReadRepository, PatientDapperReadRepository>();
+builder.Services.AddScoped<IAppointmentReadRepository, AppointmentDapperReadRepository>();
 
 // Patient handlers
 builder.Services.AddScoped<CreatePatientCommandHandler>();
