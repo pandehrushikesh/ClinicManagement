@@ -98,6 +98,11 @@ tr:last-child td { border-bottom: none; }
 .badge.active { background: #dcfce7; color: #16a34a; }
 .badge.inactive { background: #fee2e2; color: #dc2626; }
 .badge.scheduled { background: #dbeafe; color: #2563eb; }
+.badge-admin { background: #fef9c3; color: #854d0e; }
+.badge-staff { background: #e0f2fe; color: #0369a1; }
+
+/* Sidebar user info */
+.sidebar-user { padding: 8px 12px 16px; font-size: 0.78rem; color: #94a3b8; border-bottom: 1px solid #1e293b; margin-bottom: 8px; word-break: break-all; }
 
 /* Status */
 .error { color: #dc2626; background: #fee2e2; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; margin: 8px 0; }

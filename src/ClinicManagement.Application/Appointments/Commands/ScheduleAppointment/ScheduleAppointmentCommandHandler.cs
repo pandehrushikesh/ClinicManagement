@@ -12,17 +12,20 @@ public class ScheduleAppointmentCommandHandler
     private readonly IPatientRepository _patients;
     private readonly IDoctorRepository _doctors;
     private readonly IEventPublisher _publisher;
+    private readonly ICacheService _cache;
 
     public ScheduleAppointmentCommandHandler(
         IAppointmentRepository appointments,
         IPatientRepository patients,
         IDoctorRepository doctors,
-        IEventPublisher publisher)
+        IEventPublisher publisher,
+        ICacheService cache)
     {
         _appointments = appointments;
         _patients = patients;
         _doctors = doctors;
         _publisher = publisher;
+        _cache = cache;
     }
 
     public async Task<AppointmentDto> Handle(ScheduleAppointmentCommand command, CancellationToken cancellationToken = default)
@@ -47,6 +50,8 @@ public class ScheduleAppointmentCommandHandler
 
         await _appointments.AddAsync(appointment, cancellationToken);
         await _appointments.SaveChangesAsync(cancellationToken);
+
+        await _cache.RemoveByPrefixAsync("appointments:", cancellationToken);
 
         await _publisher.PublishAsync(new AppointmentScheduledEvent(
             appointment.Id,
