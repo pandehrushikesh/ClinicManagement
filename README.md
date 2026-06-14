@@ -16,6 +16,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | 5 | `phase-5-performance-layer` | Performance Layer — Redis cache, Dapper reads, CQRS matured | ✅ Complete |
 | 6 | `phase-6-containerization` | Containerization — Docker Compose, full local orchestration | ✅ Complete |
 | 7 | `phase-7-react-ui` | React UI — Vite + React + TypeScript frontend via the Gateway | ✅ Complete |
+| 8 | `phase-8-cache-roles` | Cache Invalidation + Role-based UI — write-through cache invalidation, Admin-only endpoints and conditional UI | ✅ Complete |
 
 ---
 
@@ -926,9 +927,56 @@ Open **`http://localhost:5173`** in a browser.
 
 ---
 
+## Phase 8 — Cache Invalidation + Role-based UI
+
+> Tag: `phase-8-cache-roles`
+
+### Goal
+Fix the stale-cache problem exposed in Phase 7 and introduce role-based access control end-to-end — from the JWT claim to the API endpoint to the React sidebar.
+
+---
+
+### What Changed
+
+**Phase 8A — Cache Invalidation on Writes**
+
+Every write command handler now injects `ICacheService` and invalidates the relevant cache keys immediately after `SaveChangesAsync`. Without this, Redis would serve the old list until the TTL expired.
+
+```csharp
+// After SaveChangesAsync in each command handler:
+await _cache.RemoveByPrefixAsync("appointments:", cancellationToken);
+await _cache.RemoveAsync($"appointments:{command.AppointmentId}", cancellationToken);
+```
+
+Handlers updated: `CreatePatient`, `ScheduleAppointment`, `CancelAppointment`, `ConfirmAppointment`, `CompleteAppointment`, `RescheduleAppointment`.
+
+**Phase 8B — Role-based UI and Admin Endpoint**
+
+- AuthService `Program.cs` now configures JWT bearer authentication so `[Authorize(Roles = "Admin")]` is enforced at the HTTP level.
+- `GET /auth/users` is an Admin-only endpoint that returns all registered users.
+- React `AuthContext` decodes the role claim from the JWT on login and exposes it throughout the app.
+- The sidebar shows the logged-in user's email and role badge.
+- The **Users** nav item only renders for Admin users. A Staff user cannot see or reach the page.
+
+```tsx
+{role === 'Admin' && (
+  <button onClick={() => setPage('users')}>Users</button>
+)}
+```
+
+---
+
+### The Phase 8 Lesson
+
+**Cache invalidation is a write concern, not a read concern.** The read side (Dapper queries + Redis) is pure infrastructure. The write side (command handlers) owns the contract: if you mutate state, you must also evict the cache. Putting the invalidation in the handler keeps it co-located with the mutation.
+
+**Role-based access needs two layers.** The React UI hides the Users page from Staff users — but that's UX, not security. The `[Authorize(Roles = "Admin")]` attribute on the controller is what actually enforces the rule. A Staff user with a token cannot call the endpoint even if they bypass the UI. Both layers are necessary: the API enforces, the UI guides.
+
+---
+
 ## The Journey — From Monolith to Microservices
 
-You've built a system that evolved through seven architectural phases:
+You've built a system that evolved through eight architectural phases:
 
 ```
 Phase 1: One process, one DB, clean internal structure
@@ -938,8 +986,9 @@ Phase 4: API Gateway → YARP gives clients a single entry point
 Phase 5: Performance layer → Redis + Dapper, reads separated from writes
 Phase 6: Containerization → docker-compose up starts everything
 Phase 7: React UI → browser frontend talks only to the Gateway
+Phase 8: Cache invalidation + role-based access control end-to-end
 ```
 
 Each phase added one architectural idea. Each transition exposed real pain — the erlang cookie fight, the ControllerBase naming conflict, the design-time EF migration failure, the Dapper DateOnly mismatch, the MassTransit license wall. That pain *is* the lesson. Production systems carry all of it at once.
 
-The codebase on `master` is a working microservice system with clean architecture, JWT authentication, async messaging, an API gateway, a read cache, and full container orchestration — built incrementally, one concept at a time.
+The codebase on `master` is a working microservice system with clean architecture, JWT authentication, async messaging, an API gateway, a read/write cache, role-based authorization, and full container orchestration — built incrementally, one concept at a time.
