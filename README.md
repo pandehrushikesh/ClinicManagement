@@ -12,7 +12,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | 1 | `phase-1-monolith` | Clean Monolith — domain model, CQRS, EF Core, REST API | ✅ Complete |
 | 2 | `phase-2-auth-service` | Auth Service Extracted — JWT issuance, protected endpoints | ✅ Complete |
 | 3 | `phase-3-async-messaging` | Async Messaging — RabbitMQ + NotificationService via MassTransit | ✅ Complete |
-| 4 | — | API Gateway — YARP reverse proxy, Billing service | 🔜 |
+| 4 | `phase-4-api-gateway` | API Gateway — YARP reverse proxy, single client entry point | ✅ Complete |
 | 5 | — | Performance Layer — Redis cache, Dapper reads, CQRS matured | 🔜 |
 | 6 | — | Containerization — Docker Compose, full local orchestration | 🔜 |
 
@@ -516,6 +516,93 @@ Management UI available at `http://localhost:15672`.
 **What's now painful:** Three processes to run locally. The notification is fire-and-forget — if the consumer throws an error, the API has already returned success. You need dead-letter queues and retry policies for production. That operational complexity is intentional — you now understand *why* teams invest in it.
 
 **Why MassTransit over raw RabbitMQ client (ADR-005):** The consumer doesn't know it's talking to RabbitMQ. Swap the transport to Azure Service Bus or Amazon SQS with one line in `Program.cs`.
+
+---
+
+## Phase 4 — API Gateway (YARP)
+
+> Tag: `phase-4-api-gateway` | Branch: `Phase4_APIGateway`
+
+### Goal
+Give clients a single entry point. Before Phase 4, callers needed to know three different ports. After Phase 4, everything goes through the Gateway — services can move, scale, or be replaced without clients noticing.
+
+---
+
+### What Changed
+
+#### New Project: `ClinicManagement.Gateway`
+A minimal ASP.NET Core app with zero business logic. The entire Gateway is 3 lines of C# and a routing config block in `appsettings.json`.
+
+```csharp
+// Program.cs — the entire gateway implementation
+builder.Services.AddReverseProxy()
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+
+app.MapReverseProxy();
+```
+
+Everything else — route matching, load balancing, header forwarding, health checks — is YARP configuration.
+
+---
+
+### Routing Table
+
+| Path prefix | Forwards to | Service |
+|---|---|---|
+| `/auth/**` | `https://localhost:7026` | `ClinicManagement.AuthService` |
+| `/api/**` | `https://localhost:7119` | `ClinicManagement.API` |
+
+Clients talk only to the Gateway on `https://localhost:7161`.
+
+---
+
+### Architecture After Phase 4
+
+```
+Client (browser / mobile / Postman)
+  │
+  └─► https://localhost:7161  (ClinicManagement.Gateway)
+            │
+            ├─ /auth/**  ──────────────► AuthService       :7026
+            │                              └─ ClinicManagement_Auth DB
+            │
+            └─ /api/**   ──────────────► ClinicManagement.API  :7119
+                                           ├─ ClinicManagement DB
+                                           └─ publishes to RabbitMQ
+                                                  │
+                                           NotificationService :7xxx
+                                              (no HTTP port needed)
+```
+
+---
+
+### Running Locally (Phase 4)
+
+Run all services. Only the Gateway port matters to clients:
+
+```bash
+dotnet run --project src/ClinicManagement.Gateway          # https://localhost:7161
+dotnet run --project src/ClinicManagement.AuthService      # https://localhost:7026
+dotnet run --project src/ClinicManagement.API              # https://localhost:7119
+dotnet run --project src/ClinicManagement.NotificationService
+```
+
+Test via Gateway:
+```
+POST https://localhost:7161/auth/login
+POST https://localhost:7161/api/appointments
+GET  https://localhost:7161/api/patients
+```
+
+---
+
+### The Phase 4 Lesson
+
+**What the Gateway buys:** Clients are now decoupled from service topology. You can change AuthService's port, split the API into two services, or add a BillingService — all without touching client code. The Gateway is the only contract that matters externally.
+
+**What's still painful:** The Gateway config (`appsettings.json`) must be kept in sync with actual service ports. In production this is solved by service discovery (Consul, Kubernetes DNS) — the Gateway asks "where is AuthService right now?" instead of having a hardcoded address. That's a Phase 6+ concern.
+
+**Why YARP (ADR-006):** Native .NET, no extra infrastructure. A Node.js team might use nginx or Kong. A .NET team gets YARP in-process, same runtime, same logging pipeline.
 
 ---
 
