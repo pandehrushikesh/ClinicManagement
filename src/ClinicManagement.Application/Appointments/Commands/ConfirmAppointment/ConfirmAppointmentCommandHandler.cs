@@ -8,10 +8,12 @@ namespace ClinicManagement.Application.Appointments.Commands.ConfirmAppointment;
 public class ConfirmAppointmentCommandHandler
 {
     private readonly IAppointmentRepository _appointments;
+    private readonly ICacheService _cache;
 
-    public ConfirmAppointmentCommandHandler(IAppointmentRepository appointments)
+    public ConfirmAppointmentCommandHandler(IAppointmentRepository appointments, ICacheService cache)
     {
         _appointments = appointments;
+        _cache = cache;
     }
 
     public async Task<AppointmentDto> Handle(ConfirmAppointmentCommand command, CancellationToken cancellationToken = default)
@@ -21,6 +23,10 @@ public class ConfirmAppointmentCommandHandler
 
         appointment.Confirm();
         await _appointments.SaveChangesAsync(cancellationToken);
+
+        await Task.WhenAll(
+            _cache.RemoveByPrefixAsync("appointments:", cancellationToken),
+            _cache.RemoveAsync($"appointments:{command.AppointmentId}", cancellationToken));
 
         return appointment.ToDto();
     }

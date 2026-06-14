@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api/client';
 
 interface Props {
-  onLogin: () => void;
+  onLogin: (token: string, email: string, role: string) => void;
 }
 
 export default function LoginPage({ onLogin }: Props) {
@@ -21,8 +21,7 @@ export default function LoginPage({ onLogin }: Props) {
       const data = mode === 'login'
         ? await api.login(email, password)
         : await api.register(username, email, password);
-      localStorage.setItem('token', data.token);
-      onLogin();
+      onLogin(data.token, data.email, data.role);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

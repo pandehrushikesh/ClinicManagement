@@ -47,6 +47,9 @@ export const api = {
 
   createDoctor: (body: { firstName: string; lastName: string; specialty: string }) =>
     request<Doctor>('/api/doctors', { method: 'POST', body: JSON.stringify(body) }),
+
+  getUsers: () =>
+    request<{ items: { id: number; email: string; role: string }[] }>('/auth/users'),
 };
 
 export interface Patient {

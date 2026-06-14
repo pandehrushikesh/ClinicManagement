@@ -8,10 +8,12 @@ namespace ClinicManagement.Application.Patients.Commands.CreatePatient;
 public class CreatePatientCommandHandler
 {
     private readonly IPatientRepository _repository;
+    private readonly ICacheService _cache;
 
-    public CreatePatientCommandHandler(IPatientRepository repository)
+    public CreatePatientCommandHandler(IPatientRepository repository, ICacheService cache)
     {
         _repository = repository;
+        _cache = cache;
     }
 
     public async Task<PatientDto> Handle(CreatePatientCommand command, CancellationToken cancellationToken = default)
@@ -25,6 +27,8 @@ public class CreatePatientCommandHandler
 
         await _repository.AddAsync(patient, cancellationToken);
         await _repository.SaveChangesAsync(cancellationToken);
+
+        await _cache.RemoveByPrefixAsync("patients:", cancellationToken);
 
         return patient.ToDto();
     }

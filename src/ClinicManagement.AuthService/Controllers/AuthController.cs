@@ -2,6 +2,7 @@ using BC = BCrypt.Net.BCrypt;
 using AppUser = ClinicManagement.AuthService.Entities.User;
 using ClinicManagement.AuthService.Persistence;
 using ClinicManagement.AuthService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,7 +48,19 @@ public class AuthController : ControllerBase
         var token = _tokenService.GenerateToken(user);
         return Ok(new { success = true, data = new { token, user.Email, user.Role } });
     }
+
+    [HttpGet("users")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetUsers(CancellationToken ct)
+    {
+        var users = await _db.Users
+            .OrderBy(u => u.Email)
+            .Select(u => new { u.Id, u.Email, u.Role })
+            .ToListAsync(ct);
+
+        return Ok(new { success = true, data = new { items = users }, error = (string?)null });
+    }
 }
 
-public record RegisterRequest(string Email, string Password, string? Role);
+public record RegisterRequest(string Email, string Password, string? Role, string? Username = null);
 public record LoginRequest(string Email, string Password);

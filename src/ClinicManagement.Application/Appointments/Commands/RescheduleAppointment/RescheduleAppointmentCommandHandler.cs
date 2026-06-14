@@ -8,10 +8,12 @@ namespace ClinicManagement.Application.Appointments.Commands.RescheduleAppointme
 public class RescheduleAppointmentCommandHandler
 {
     private readonly IAppointmentRepository _appointments;
+    private readonly ICacheService _cache;
 
-    public RescheduleAppointmentCommandHandler(IAppointmentRepository appointments)
+    public RescheduleAppointmentCommandHandler(IAppointmentRepository appointments, ICacheService cache)
     {
         _appointments = appointments;
+        _cache = cache;
     }
 
     public async Task<AppointmentDto> Handle(RescheduleAppointmentCommand command, CancellationToken cancellationToken = default)
@@ -28,6 +30,10 @@ public class RescheduleAppointmentCommandHandler
 
         appointment.Reschedule(command.NewScheduledAt, command.NewDurationMinutes);
         await _appointments.SaveChangesAsync(cancellationToken);
+
+        await Task.WhenAll(
+            _cache.RemoveByPrefixAsync("appointments:", cancellationToken),
+            _cache.RemoveAsync($"appointments:{command.AppointmentId}", cancellationToken));
 
         return appointment.ToDto();
     }
