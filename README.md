@@ -15,6 +15,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | 4 | `phase-4-api-gateway` | API Gateway — YARP reverse proxy, single client entry point | ✅ Complete |
 | 5 | `phase-5-performance-layer` | Performance Layer — Redis cache, Dapper reads, CQRS matured | ✅ Complete |
 | 6 | `phase-6-containerization` | Containerization — Docker Compose, full local orchestration | ✅ Complete |
+| 7 | `phase-7-react-ui` | React UI — Vite + React + TypeScript frontend via the Gateway | ✅ Complete |
 
 ---
 
@@ -829,9 +830,105 @@ docker-compose down -v       # stop containers AND delete data
 
 ---
 
+---
+
+## Phase 7 — React UI
+
+> Tag: `phase-7-react-ui`
+
+### Goal
+Add a browser-based frontend that talks exclusively through the Gateway. No service is called directly — all traffic flows through `http://localhost:7161`.
+
+---
+
+### Stack
+
+| Choice | Reason |
+|---|---|
+| Vite + React + TypeScript | Fast dev server, HMR, type safety |
+| Plain CSS | No UI library dependency — keeps focus on architecture, not styling |
+| `localStorage` for JWT | Simple; production would use `httpOnly` cookies |
+
+---
+
+### Project Location
+
+```
+src/
+└── ClinicManagement.Web/     # Vite React app
+    ├── src/
+    │   ├── api/
+    │   │   └── client.ts     # All fetch calls + TypeScript interfaces
+    │   ├── pages/
+    │   │   ├── LoginPage.tsx       # Login + Register
+    │   │   ├── PatientsPage.tsx    # List + Create patients
+    │   │   ├── DoctorsPage.tsx     # List + Create doctors
+    │   │   └── AppointmentsPage.tsx # List + Create appointments
+    │   ├── App.tsx           # Sidebar layout, auth gate, page routing
+    │   └── App.css           # All styles
+    └── package.json
+```
+
+---
+
+### Features
+
+| Page | What it does |
+|---|---|
+| Login / Register | Issues JWT via AuthService, stores in `localStorage` |
+| Patients | List all patients (paginated), create new patient |
+| Doctors | List all doctors, create new doctor with specialty |
+| Appointments | List appointments with patient + doctor names and status badge, create new appointment |
+
+---
+
+### Architecture Note — CORS
+
+The Gateway was the only change needed on the backend:
+
+```csharp
+// ClinicManagement.Gateway/Program.cs
+app.UseCors(policy =>
+    policy.WithOrigins("http://localhost:5173")
+          .AllowAnyHeader()
+          .AllowAnyMethod());
+```
+
+Individual services (AuthService, ClinicManagement.API) needed no changes — they're only reachable through the Gateway inside the Docker network.
+
+---
+
+### Running the UI
+
+The backend must be running first:
+```bash
+docker-compose up --build
+```
+
+Then in a separate terminal:
+```bash
+cd src/ClinicManagement.Web
+npm install
+npm run dev
+```
+
+Open **`http://localhost:5173`** in a browser.
+
+---
+
+### The Phase 7 Lesson
+
+**Why all calls go through the Gateway:** The React app has one `BASE_URL` — `http://localhost:7161`. It has no knowledge of which port auth-service or clinic-api run on, or even that they're separate processes. Swapping a service, moving it to a different port, or replacing it entirely requires zero changes in the frontend. That's the Gateway's contract.
+
+**Why `localStorage` and not cookies:** `httpOnly` cookies are the production-safe choice (immune to XSS). `localStorage` is used here because it's transparent — you can inspect the JWT directly in DevTools. The switch to cookies is a one-line change in production.
+
+**Cache invalidation surfaced naturally:** After creating an appointment, the list showed stale data until the Redis TTL expired. This is the classic cache invalidation problem — the write path must also invalidate the relevant cache keys. Phase 8 material.
+
+---
+
 ## The Journey — From Monolith to Microservices
 
-You've built a system that evolved through six architectural phases:
+You've built a system that evolved through seven architectural phases:
 
 ```
 Phase 1: One process, one DB, clean internal structure
@@ -840,8 +937,9 @@ Phase 3: Async messaging → RabbitMQ decouples appointment creation from notifi
 Phase 4: API Gateway → YARP gives clients a single entry point
 Phase 5: Performance layer → Redis + Dapper, reads separated from writes
 Phase 6: Containerization → docker-compose up starts everything
+Phase 7: React UI → browser frontend talks only to the Gateway
 ```
 
-Each phase added one architectural idea. Each transition exposed real pain — the erlang cookie fight, the ControllerBase naming conflict, the design-time EF migration failure. That pain *is* the lesson. Production systems carry all of it at once.
+Each phase added one architectural idea. Each transition exposed real pain — the erlang cookie fight, the ControllerBase naming conflict, the design-time EF migration failure, the Dapper DateOnly mismatch, the MassTransit license wall. That pain *is* the lesson. Production systems carry all of it at once.
 
 The codebase on `master` is a working microservice system with clean architecture, JWT authentication, async messaging, an API gateway, a read cache, and full container orchestration — built incrementally, one concept at a time.

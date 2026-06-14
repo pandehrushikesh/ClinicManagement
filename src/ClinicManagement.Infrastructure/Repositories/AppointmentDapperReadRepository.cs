@@ -28,7 +28,9 @@ public class AppointmentDapperReadRepository : IAppointmentReadRepository
                    p.FirstName + ' ' + p.LastName AS PatientFullName,
                    a.DoctorId,
                    d.FirstName + ' ' + d.LastName AS DoctorFullName,
-                   a.ScheduledAt, a.DurationMinutes, a.Status, a.Notes, a.CancellationReason, a.CreatedAt
+                   a.ScheduledAt, a.DurationMinutes,
+                   CASE a.Status WHEN 1 THEN 'Scheduled' WHEN 2 THEN 'Confirmed' WHEN 3 THEN 'Completed' WHEN 4 THEN 'Cancelled' ELSE 'Unknown' END AS Status,
+                   a.Notes, a.CancellationReason, a.CreatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId
             INNER JOIN Doctors d ON d.Id = a.DoctorId
@@ -57,7 +59,9 @@ public class AppointmentDapperReadRepository : IAppointmentReadRepository
                    p.FirstName + ' ' + p.LastName AS PatientFullName,
                    a.DoctorId,
                    d.FirstName + ' ' + d.LastName AS DoctorFullName,
-                   a.ScheduledAt, a.DurationMinutes, a.Status, a.Notes, a.CancellationReason, a.CreatedAt
+                   a.ScheduledAt, a.DurationMinutes,
+                   CASE a.Status WHEN 1 THEN 'Scheduled' WHEN 2 THEN 'Confirmed' WHEN 3 THEN 'Completed' WHEN 4 THEN 'Cancelled' ELSE 'Unknown' END AS Status,
+                   a.Notes, a.CancellationReason, a.CreatedAt
             FROM Appointments a
             INNER JOIN Patients p ON p.Id = a.PatientId
             INNER JOIN Doctors d ON d.Id = a.DoctorId

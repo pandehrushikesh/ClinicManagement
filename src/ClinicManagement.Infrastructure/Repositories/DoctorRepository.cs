@@ -14,6 +14,9 @@ public class DoctorRepository : IDoctorRepository
     public async Task<Doctor?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
         => await _context.Doctors.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Doctor>> GetAllAsync(CancellationToken cancellationToken = default)
+        => await _context.Doctors.OrderBy(d => d.LastName).ToListAsync(cancellationToken);
+
     public async Task AddAsync(Doctor doctor, CancellationToken cancellationToken = default)
         => await _context.Doctors.AddAsync(doctor, cancellationToken);
 
