@@ -11,7 +11,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 |---|---|---|---|
 | 1 | `phase-1-monolith` | Clean Monolith — domain model, CQRS, EF Core, REST API | ✅ Complete |
 | 2 | `phase-2-auth-service` | Auth Service Extracted — JWT issuance, protected endpoints | ✅ Complete |
-| 3 | — | Async Messaging — RabbitMQ + Notifications via MassTransit | 🔜 |
+| 3 | `phase-3-async-messaging` | Async Messaging — RabbitMQ + NotificationService via MassTransit | ✅ Complete |
 | 4 | — | API Gateway — YARP reverse proxy, Billing service | 🔜 |
 | 5 | — | Performance Layer — Redis cache, Dapper reads, CQRS matured | 🔜 |
 | 6 | — | Containerization — Docker Compose, full local orchestration | 🔜 |
@@ -410,6 +410,112 @@ dotnet ef database update --project src/ClinicManagement.AuthService --startup-p
 **What the seams bought us:** Adding a full auth service required zero changes to Application, Domain, or Infrastructure. Only `Program.cs` and three controller attributes changed in the main API. That is Clean Architecture working as intended.
 
 **What's new and painful:** Two processes to run locally. Two `appsettings.Development.json` files to maintain. The shared JWT secret is a deployment coupling — if you rotate it, both services must redeploy simultaneously. This pain is intentional; Phase 4's API Gateway will centralise some of it.
+
+---
+
+---
+
+## Phase 3 — Async Messaging
+
+> Tag: `phase-3-async-messaging` | Branch: `Phase3_AsyncMessaging`
+
+### Goal
+Decouple appointment scheduling from notification delivery. When an appointment is booked, the main API no longer cares who needs to be notified or how. It drops an event on a queue and moves on. The NotificationService picks it up independently — at its own pace, with its own retry logic.
+
+---
+
+### What Changed
+
+#### New Service: `ClinicManagement.NotificationService`
+A standalone ASP.NET Core app. No REST controllers — it exists purely to consume messages.
+
+```
+ClinicManagement.NotificationService/
+├── Consumers/
+│   └── AppointmentScheduledConsumer.cs   # IConsumer<AppointmentScheduledEvent>
+└── Program.cs                            # MassTransit wired, no HTTP endpoints needed
+```
+
+#### Updated: `ClinicManagement.Shared`
+Added `Events/AppointmentScheduledEvent.cs` — the shared message contract. Both the publisher (API) and consumer (NotificationService) reference this same record. This is the only coupling between the two services.
+
+#### Updated: `ClinicManagement.Application`
+`IEventPublisher` interface added to `Common/Interfaces/`. The `ScheduleAppointmentCommandHandler` depends on this interface — it knows nothing about RabbitMQ or MassTransit.
+
+#### Updated: `ClinicManagement.Infrastructure`
+`MassTransitEventPublisher` implements `IEventPublisher` using MassTransit's `IPublishEndpoint`. This is the only place MassTransit leaks into the main service's codebase.
+
+#### Updated: `ClinicManagement.API`
+MassTransit registered as publisher-only (no consumers). `IEventPublisher` registered as `MassTransitEventPublisher`.
+
+---
+
+### Async Flow
+
+```
+Client
+  │
+  └─ POST /api/appointments ──► ClinicManagement.API
+                                  │
+                                  ├─ validate JWT
+                                  ├─ run ScheduleAppointmentCommandHandler
+                                  ├─ save to SQL Server
+                                  ├─ publish AppointmentScheduledEvent ──► RabbitMQ
+                                  └─ return 201 (does NOT wait for notification)
+
+                                                    RabbitMQ
+                                                       │
+                                  ClinicManagement.NotificationService
+                                    └─ AppointmentScheduledConsumer.Consume()
+                                        └─ log: "[NOTIFICATION] Appointment #N scheduled.
+                                                  Patient: X | Doctor: Y | At: Z"
+```
+
+The main API returns `201 Created` before the notification is processed. If NotificationService is down, the message stays in the queue and is delivered when it comes back up — **no data loss, no tight coupling**.
+
+---
+
+### Message Contract
+
+```csharp
+public record AppointmentScheduledEvent(
+    int AppointmentId,
+    int PatientId,
+    string PatientFullName,
+    int DoctorId,
+    string DoctorFullName,
+    DateTime ScheduledAt,
+    int DurationMinutes,
+    DateTime OccurredAt
+);
+```
+
+MassTransit auto-names the queue from the consumer type: `clinic-management-notification-service_appointment-scheduled`.
+
+---
+
+### Running Locally (Phase 3)
+
+Run **all 3 services** simultaneously:
+
+```bash
+dotnet run --project src/ClinicManagement.AuthService
+dotnet run --project src/ClinicManagement.API
+dotnet run --project src/ClinicManagement.NotificationService
+```
+
+RabbitMQ must be running on `localhost:5672` (default guest/guest credentials).
+Management UI available at `http://localhost:15672`.
+
+---
+
+### The Phase 3 Lesson
+
+**What async decoupling buys:** The main API's response time is unaffected by how long notification delivery takes. NotificationService can be deployed, restarted, or scaled independently. New consumers (e.g., an AuditService) can subscribe to the same event without touching the API.
+
+**What's now painful:** Three processes to run locally. The notification is fire-and-forget — if the consumer throws an error, the API has already returned success. You need dead-letter queues and retry policies for production. That operational complexity is intentional — you now understand *why* teams invest in it.
+
+**Why MassTransit over raw RabbitMQ client (ADR-005):** The consumer doesn't know it's talking to RabbitMQ. Swap the transport to Azure Service Bus or Amazon SQS with one line in `Program.cs`.
 
 ---
 
