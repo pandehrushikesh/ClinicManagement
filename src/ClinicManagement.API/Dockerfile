@@ -1,7 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /repo
 
-COPY ClinicManagement.sln .
 COPY src/ClinicManagement.Domain/ClinicManagement.Domain.csproj src/ClinicManagement.Domain/
 COPY src/ClinicManagement.Application/ClinicManagement.Application.csproj src/ClinicManagement.Application/
 COPY src/ClinicManagement.Infrastructure/ClinicManagement.Infrastructure.csproj src/ClinicManagement.Infrastructure/
@@ -10,8 +9,6 @@ COPY src/ClinicManagement.API/ClinicManagement.API.csproj src/ClinicManagement.A
 COPY src/ClinicManagement.AuthService/ClinicManagement.AuthService.csproj src/ClinicManagement.AuthService/
 COPY src/ClinicManagement.NotificationService/ClinicManagement.NotificationService.csproj src/ClinicManagement.NotificationService/
 COPY src/ClinicManagement.Gateway/ClinicManagement.Gateway.csproj src/ClinicManagement.Gateway/
-COPY tests/ tests/
-
 RUN dotnet restore src/ClinicManagement.API/ClinicManagement.API.csproj
 
 COPY src/ src/
