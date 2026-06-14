@@ -1,0 +1,117 @@
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "ClinicMgmt_Dev#2026"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1434:1433"          # host 1434 → container 1433 (avoids clash with local SQL Server)
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'ClinicMgmt_Dev#2026' -Q 'SELECT 1' -C -b -o /dev/null"]
+      interval: 10s
+      retries: 10
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5673:5672"          # AMQP (host 5673 → container 5672)
+      - "15673:15672"        # management UI (host 15673 → container 15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"          # host 6380 → container 6379 (avoids clash with local Redis)
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  # ── Application Services ──────────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: src/ClinicManagement.AuthService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=ClinicManagement_Auth;User Id=sa;Password=ClinicMgmt_Dev#2026;Encrypt=True;TrustServerCertificate=True;"
+      JwtSettings__Secret: "SuperSecretKeyForClinicManagementSystem2026!"
+      JwtSettings__Issuer: "ClinicManagement.AuthService"
+      JwtSettings__Audience: "ClinicManagement.API"
+      JwtSettings__ExpiryMinutes: "60"
+    ports:
+      - "7026:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  clinic-api:
+    build:
+      context: .
+      dockerfile: src/ClinicManagement.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=ClinicManagement;User Id=sa;Password=ClinicMgmt_Dev#2026;Encrypt=True;TrustServerCertificate=True;"
+      ConnectionStrings__Redis: "redis:6379"
+      JwtSettings__Secret: "SuperSecretKeyForClinicManagementSystem2026!"
+      JwtSettings__Issuer: "ClinicManagement.AuthService"
+      JwtSettings__Audience: "ClinicManagement.API"
+      JwtSettings__ExpiryMinutes: "60"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+    ports:
+      - "7119:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: src/ClinicManagement.NotificationService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: src/ClinicManagement.Gateway/Dockerfile
+    ports:
+      - "7161:8080"
+    depends_on:
+      - auth-service
+      - clinic-api
+
+volumes:
+  sqlserver_data:
+  rabbitmq_data:
+  redis_data:

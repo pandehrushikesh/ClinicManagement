@@ -103,6 +103,13 @@ builder.Services.AddScoped<GetAppointmentsQueryHandler>();
 
 var app = builder.Build();
 
+// Auto-migrate on startup so Docker containers self-initialize
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())

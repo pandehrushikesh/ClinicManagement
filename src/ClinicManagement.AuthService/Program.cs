@@ -17,6 +17,13 @@ builder.Services.AddScoped<TokenService>();
 
 var app = builder.Build();
 
+// Auto-migrate on startup so Docker containers self-initialize
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+    db.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
