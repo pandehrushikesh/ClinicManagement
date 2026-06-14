@@ -13,7 +13,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | 2 | `phase-2-auth-service` | Auth Service Extracted — JWT issuance, protected endpoints | ✅ Complete |
 | 3 | `phase-3-async-messaging` | Async Messaging — RabbitMQ + NotificationService via MassTransit | ✅ Complete |
 | 4 | `phase-4-api-gateway` | API Gateway — YARP reverse proxy, single client entry point | ✅ Complete |
-| 5 | — | Performance Layer — Redis cache, Dapper reads, CQRS matured | 🔜 |
+| 5 | `phase-5-performance-layer` | Performance Layer — Redis cache, Dapper reads, CQRS matured | ✅ Complete |
 | 6 | — | Containerization — Docker Compose, full local orchestration | 🔜 |
 
 ---
@@ -603,6 +603,105 @@ GET  https://localhost:7161/api/patients
 **What's still painful:** The Gateway config (`appsettings.json`) must be kept in sync with actual service ports. In production this is solved by service discovery (Consul, Kubernetes DNS) — the Gateway asks "where is AuthService right now?" instead of having a hardcoded address. That's a Phase 6+ concern.
 
 **Why YARP (ADR-006):** Native .NET, no extra infrastructure. A Node.js team might use nginx or Kong. A .NET team gets YARP in-process, same runtime, same logging pipeline.
+
+---
+
+---
+
+## Phase 5 — Performance Layer
+
+> Tag: `phase-5-performance-layer` | Branch: `Phase5_PerformanceLayer`
+
+### Goal
+Read performance is always the first bottleneck. Phase 5 introduces two standard production techniques — a read cache and a lightweight query executor — without changing the system's observable behavior or adding new endpoints.
+
+---
+
+### What Changed
+
+#### Read/Write Split (CQRS matured)
+Every query handler now has two dependencies instead of one:
+
+| Before | After |
+|---|---|
+| `IPatientRepository` (EF Core, owns reads + writes) | `IPatientReadRepository` (Dapper, reads only) + `IPatientRepository` (EF Core, writes only) |
+
+Writes still go through EF Core — change tracking, validation, and domain events all stay intact. Reads bypass EF Core entirely and execute raw SQL through Dapper.
+
+#### Cache-Aside Pattern
+Every list and detail query follows the same flow:
+
+```
+Request
+  │
+  ├─► Redis? ──yes──► return cached DTO
+  │
+  └─► no → Dapper SQL → SQL Server
+                │
+                └─► write to Redis (TTL 2–5 min) → return DTO
+```
+
+The cache key encodes all query parameters: `patients:page:after=0:size=20`, `appointments:42`. A write operation (create, update) should invalidate the relevant cache keys — that eviction logic lives in command handlers and is the natural next step.
+
+#### ICacheService — Application Layer Abstraction
+The Application layer defines the cache contract:
+
+```csharp
+public interface ICacheService
+{
+    Task<T?> GetAsync<T>(string key, CancellationToken ct = default) where T : class;
+    Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken ct = default) where T : class;
+    Task RemoveAsync(string key, CancellationToken ct = default);
+}
+```
+
+`RedisCacheService` in Infrastructure implements it using `IDistributedCache`. The handler doesn't know it's talking to Redis.
+
+#### Dapper Read Repositories
+Raw SQL with explicit JOINs — no N+1, no lazy loading, no EF Core overhead:
+
+```sql
+SELECT a.Id, a.PatientId,
+       p.FirstName + ' ' + p.LastName AS PatientFullName,
+       a.DoctorId,
+       d.FirstName + ' ' + d.LastName AS DoctorFullName,
+       a.ScheduledAt, a.DurationMinutes, a.Status, ...
+FROM Appointments a
+INNER JOIN Patients p ON p.Id = a.PatientId
+INNER JOIN Doctors d ON d.Id = a.DoctorId
+WHERE a.Id > @AfterID
+ORDER BY a.Id
+OFFSET 0 ROWS FETCH NEXT @PageSize ROWS ONLY
+```
+
+Keyset pagination (`WHERE a.Id > @AfterID`) is retained — no offset drift at scale.
+
+---
+
+### Running Locally (Phase 5)
+
+Install Redis (Windows — one option):
+
+```powershell
+# Option 1: Docker
+docker run -d -p 6379:6379 redis
+
+# Option 2: Chocolatey
+choco install redis-64
+redis-server
+```
+
+`appsettings.json` already defaults Redis to `localhost:6379`. No other config change needed.
+
+---
+
+### The Phase 5 Lesson
+
+**Why Dapper for reads?** EF Core builds query plans at runtime and materializes full entity graphs. Dapper runs the exact SQL you write and maps straight to DTOs. For list endpoints called hundreds of times per minute, that difference is measurable. For writes (one row at a time, with validation and domain events), EF Core's overhead is negligible.
+
+**Why Redis for cache?** SQL Server handles hundreds of queries per second comfortably. But it doesn't scale horizontally, and every query burns CPU and network. Redis answers in microseconds and is horizontally scalable. The cache-aside pattern keeps the logic simple: the DB is always authoritative; Redis is just a fast shortcut.
+
+**The clean architecture invariant holds.** The Application layer now depends on `ICacheService` and `IPatientReadRepository` — both interfaces defined in Application, implemented in Infrastructure. The dependency arrow still points inward. The handler doesn't import a Redis or Dapper namespace.
 
 ---
 
