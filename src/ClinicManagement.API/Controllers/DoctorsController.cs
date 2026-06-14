@@ -15,6 +15,14 @@ public class DoctorsController : ControllerBase
 
     public DoctorsController(IDoctorRepository doctors) => _doctors = doctors;
 
+    [HttpGet]
+    public async Task<IActionResult> GetAll(CancellationToken ct = default)
+    {
+        var doctors = await _doctors.GetAllAsync(ct);
+        var items = doctors.Select(d => new DoctorDto(d.Id, d.FullName, d.Specialty, d.IsActive)).ToList();
+        return Ok(new { success = true, data = new { items }, error = (string?)null });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDoctorRequest request, CancellationToken ct = default)
     {
