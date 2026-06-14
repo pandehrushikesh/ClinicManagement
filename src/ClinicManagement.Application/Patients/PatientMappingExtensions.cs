@@ -10,7 +10,7 @@ internal static class PatientMappingExtensions
         p.FirstName,
         p.LastName,
         p.FullName,
-        p.DateOfBirth,
+        p.DateOfBirth.ToDateTime(TimeOnly.MinValue),
         p.Email.Value,
         p.Phone.Value,
         p.IsActive,

@@ -5,7 +5,7 @@ public record PatientDto(
     string FirstName,
     string LastName,
     string FullName,
-    DateOnly DateOfBirth,
+    DateTime DateOfBirth,
     string Email,
     string Phone,
     bool IsActive,
