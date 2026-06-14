@@ -14,7 +14,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | 3 | `phase-3-async-messaging` | Async Messaging — RabbitMQ + NotificationService via MassTransit | ✅ Complete |
 | 4 | `phase-4-api-gateway` | API Gateway — YARP reverse proxy, single client entry point | ✅ Complete |
 | 5 | `phase-5-performance-layer` | Performance Layer — Redis cache, Dapper reads, CQRS matured | ✅ Complete |
-| 6 | — | Containerization — Docker Compose, full local orchestration | 🔜 |
+| 6 | `phase-6-containerization` | Containerization — Docker Compose, full local orchestration | ✅ Complete |
 
 ---
 
@@ -705,4 +705,143 @@ redis-server
 
 ---
 
-*Each phase will add a new section to this file. By Phase 6, this README will tell the complete story of how a monolith becomes a microservice system.*
+---
+
+## Phase 6 — Containerization
+
+> Tag: `phase-6-containerization` | Branch: `Phase6_Containerization`
+
+### Goal
+The whole system — seven processes across three infrastructure dependencies — should start with one command and work identically on any machine. No "works on my machine." No manual SQL Server setup, no local RabbitMQ erlang cookie fights.
+
+---
+
+### What Changed
+
+#### Dockerfile per service (multi-stage build)
+Each service has its own `Dockerfile` using a two-stage build:
+
+```dockerfile
+# Stage 1: build (SDK image — large, not shipped)
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /repo
+# Copy .csproj files first → restore → then copy src → publish
+# This layer-caches NuGet restore as long as .csproj files don't change
+
+# Stage 2: runtime (aspnet image — small, ~220MB, what you ship)
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+COPY --from=build /app .
+ENV ASPNETCORE_URLS=http://+:8080   # HTTP only inside the cluster
+ENTRYPOINT ["dotnet", "ClinicManagement.API.dll"]
+```
+
+All services use HTTP internally. HTTPS termination belongs at the load balancer / ingress — not at each service.
+
+#### docker-compose.yml
+Seven containers, all wired together:
+
+| Container | Image | Host Port |
+|---|---|---|
+| `sqlserver` | `mssql/server:2022-latest` | 1434 (avoids clash with local SQL Server on 1433) |
+| `rabbitmq` | `rabbitmq:3-management` | 5673 / 15673 |
+| `redis` | `redis:7-alpine` | 6380 |
+| `auth-service` | built from source | 7026 |
+| `clinic-api` | built from source | 7119 |
+| `notification-service` | built from source | — (no HTTP port needed) |
+| `gateway` | built from source | 7161 |
+
+All services pass config via environment variables, which override `appsettings.json`. Container names are the hostnames: `rabbitmq`, `sqlserver`, `redis`, `auth-service`, `clinic-api`.
+
+#### Health checks + depends_on
+Infrastructure containers declare healthchecks. Application services use `depends_on: condition: service_healthy` — so `clinic-api` won't start until SQL Server is actually ready to accept connections, not just "started".
+
+```yaml
+sqlserver:
+  healthcheck:
+    test: sqlcmd -S localhost -U sa -P '...' -Q 'SELECT 1'
+    interval: 10s
+    retries: 10
+    start_period: 30s
+
+clinic-api:
+  depends_on:
+    sqlserver:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+```
+
+#### Auto-migrate on startup
+`API` and `AuthService` call `db.Database.Migrate()` at startup:
+
+```csharp
+using var scope = app.Services.CreateScope();
+var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+db.Database.Migrate();
+```
+
+On first `docker-compose up`, the databases don't exist. EF Core creates them and applies all migrations. On every subsequent restart it's a no-op. No manual `dotnet ef database update` step.
+
+#### Gateway config for Docker
+`appsettings.Docker.json` overrides cluster addresses from `localhost:7026` to `http://auth-service:8080` — using Docker's internal DNS. This file is loaded when `ASPNETCORE_ENVIRONMENT=Docker`, which is set in the Gateway's `Dockerfile`.
+
+---
+
+### Running the Full System
+
+Prerequisites: Docker Desktop running.
+
+```bash
+# From the solution root
+docker-compose up --build
+
+# First run takes ~3–5 minutes (pulling images, compiling all projects)
+# Subsequent runs: ~30 seconds (build cache hits)
+```
+
+Test via the Gateway:
+```
+POST http://localhost:7161/auth/register
+POST http://localhost:7161/auth/login
+POST http://localhost:7161/api/patients
+GET  http://localhost:7161/api/patients
+```
+
+Stop everything:
+```bash
+docker-compose down          # stop containers, keep volumes
+docker-compose down -v       # stop containers AND delete data
+```
+
+---
+
+### The Phase 6 Lesson
+
+**Why Docker Compose for development?** It eliminates "works on my machine." A new developer clones the repo and runs `docker-compose up`. There's no setup guide to follow, no versions to match, no Erlang cookie to fight. The compose file *is* the setup guide, and it's executable.
+
+**Why HTTP inside the cluster?** HTTPS requires certificates. In production, a load balancer (nginx, Kubernetes ingress, AWS ALB) terminates TLS and forwards plain HTTP to services. Running HTTPS between services inside a private network is operational overhead with no security benefit — they're on the same trusted network. The Gateway is the only place that faces the outside world.
+
+**Why offset host ports (1434, 5673, 6380)?** If you're running local SQL Server, RabbitMQ, or Redis for development outside Docker, the default ports are taken. Offset ports let you run `docker-compose up` alongside your local dev tooling without conflicts.
+
+**What's deliberately left out:** production-grade Docker practices (secrets management, read-only filesystems, non-root users, resource limits, health-check HTTP probes) — those are Day 2 operations concerns. This phase proves the system is containerizable; hardening is a separate concern.
+
+---
+
+## The Journey — From Monolith to Microservices
+
+You've built a system that evolved through six architectural phases:
+
+```
+Phase 1: One process, one DB, clean internal structure
+Phase 2: Auth extracted → two processes, JWT boundary
+Phase 3: Async messaging → RabbitMQ decouples appointment creation from notification
+Phase 4: API Gateway → YARP gives clients a single entry point
+Phase 5: Performance layer → Redis + Dapper, reads separated from writes
+Phase 6: Containerization → docker-compose up starts everything
+```
+
+Each phase added one architectural idea. Each transition exposed real pain — the erlang cookie fight, the ControllerBase naming conflict, the design-time EF migration failure. That pain *is* the lesson. Production systems carry all of it at once.
+
+The codebase on `master` is a working microservice system with clean architecture, JWT authentication, async messaging, an API gateway, a read cache, and full container orchestration — built incrementally, one concept at a time.
