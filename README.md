@@ -10,7 +10,7 @@ Each phase introduces a new architectural concern. The pain of each transition i
 | Phase | Tag | Theme | Status |
 |---|---|---|---|
 | 1 | `phase-1-monolith` | Clean Monolith — domain model, CQRS, EF Core, REST API | ✅ Complete |
-| 2 | — | Auth Service Extracted — JWT issuance, cross-service HTTP | 🔜 |
+| 2 | `phase-2-auth-service` | Auth Service Extracted — JWT issuance, protected endpoints | ✅ Complete |
 | 3 | — | Async Messaging — RabbitMQ + Notifications via MassTransit | 🔜 |
 | 4 | — | API Gateway — YARP reverse proxy, Billing service | 🔜 |
 | 5 | — | Performance Layer — Redis cache, Dapper reads, CQRS matured | 🔜 |
@@ -275,6 +275,141 @@ dotnet test tests/ClinicManagement.UnitTests
 - **No Auth** — all endpoints are open; JWT issuance is Phase 2's entire lesson
 - **No Docker** — containerization is Phase 6; don't compound complexity during architecture learning
 - **No lazy loading** — all navigations use explicit `.Include()` or separate queries
+
+---
+
+## Phase 2 — Auth Service Extracted
+
+> Tag: `phase-2-auth-service` | Branch: `Phase2_AuthServiceExtracted`
+
+### Goal
+Extract authentication into a dedicated service with its own database. The main API stops owning identity — it only validates tokens it did not issue. This is the first real service boundary.
+
+---
+
+### What Changed
+
+#### New Service: `ClinicManagement.AuthService`
+A standalone ASP.NET Core Web API. Completely independent — its own process, its own database, its own migrations.
+
+```
+ClinicManagement.AuthService/
+├── Controllers/
+│   └── AuthController.cs       # POST /auth/register, POST /auth/login
+├── Entities/
+│   └── User.cs                 # Email, PasswordHash (BCrypt), Role, VerifyPassword()
+├── Persistence/
+│   ├── AuthDbContext.cs        # Own EF Core context → ClinicManagement_Auth DB
+│   └── AuthDbContextFactory.cs # Design-time factory for EF CLI migrations
+├── Services/
+│   └── TokenService.cs         # Issues HS256 JWT with sub/email/role/jti claims
+└── Program.cs
+```
+
+#### New Project: `ClinicManagement.Shared`
+Holds `JwtSettings` (Secret, Issuer, Audience, ExpiryMinutes) — the only thing both services need to agree on. Both services bind this from their own `appsettings.json`. No other shared code.
+
+#### Updated: `ClinicManagement.API`
+- Added `AddAuthentication` + `AddJwtBearer` — validates tokens, never issues them
+- `[Authorize]` added to `PatientsController`, `DoctorsController`, `AppointmentsController`
+- Zero changes to Application, Domain, or Infrastructure — the seams held
+
+---
+
+### Two Databases
+
+| Database | Owns |
+|---|---|
+| `ClinicManagement` | Patients, Doctors, Appointments |
+| `ClinicManagement_Auth` | Users (identity only) |
+
+No foreign keys cross the database boundary. The main API has no knowledge of the `Users` table.
+
+---
+
+### Auth Flow
+
+```
+Client
+  │
+  ├─ POST /auth/register  ──► AuthService ──► hash password (BCrypt)
+  │                                        ──► save User to ClinicManagement_Auth
+  │                                        ──► return JWT
+  │
+  ├─ POST /auth/login     ──► AuthService ──► verify password
+  │                                        ──► return JWT
+  │
+  └─ GET /api/patients    ──► ClinicManagement.API
+       Authorization: Bearer <token>        ──► validate JWT signature + expiry
+                                            ──► no call to AuthService needed
+                                            ──► serve request
+```
+
+JWT validation is **stateless** — the main API verifies the token signature locally using the shared secret. No HTTP call to AuthService per request.
+
+---
+
+### JWT Token Contents
+
+| Claim | Value |
+|---|---|
+| `sub` | User ID |
+| `email` | User email |
+| `role` | User role (`Staff`, `Admin`, etc.) |
+| `jti` | Unique token ID (for future revocation) |
+| `exp` | Expiry (configurable, default 60 min) |
+
+---
+
+### Auth Endpoints
+
+| Method | Route | Auth required | Description |
+|---|---|---|---|
+| `POST` | `/auth/register` | No | Create account, returns JWT |
+| `POST` | `/auth/login` | No | Verify credentials, returns JWT |
+
+All existing `ClinicManagement.API` endpoints now require `Authorization: Bearer <token>`.
+
+---
+
+### Running Locally (Phase 2)
+
+Run **both** services simultaneously (different ports):
+
+```bash
+dotnet run --project src/ClinicManagement.AuthService   # e.g. https://localhost:7001
+dotnet run --project src/ClinicManagement.API           # e.g. https://localhost:7000
+```
+
+Create `src/ClinicManagement.AuthService/appsettings.Development.json` (git-ignored):
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=YOUR_SERVER;Database=ClinicManagement_Auth;..."
+  },
+  "JwtSettings": {
+    "Secret": "your-secret-min-32-chars",
+    "Issuer": "ClinicManagement.AuthService",
+    "Audience": "ClinicManagement.API",
+    "ExpiryMinutes": 60
+  }
+}
+```
+
+Add the same `JwtSettings` block to `src/ClinicManagement.API/appsettings.Development.json` (secret must match).
+
+Apply AuthService migration:
+```bash
+dotnet ef database update --project src/ClinicManagement.AuthService --startup-project src/ClinicManagement.AuthService
+```
+
+---
+
+### The Phase 2 Lesson
+
+**What the seams bought us:** Adding a full auth service required zero changes to Application, Domain, or Infrastructure. Only `Program.cs` and three controller attributes changed in the main API. That is Clean Architecture working as intended.
+
+**What's new and painful:** Two processes to run locally. Two `appsettings.Development.json` files to maintain. The shared JWT secret is a deployment coupling — if you rotate it, both services must redeploy simultaneously. This pain is intentional; Phase 4's API Gateway will centralise some of it.
 
 ---
 
