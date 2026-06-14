@@ -11,9 +11,11 @@ using ClinicManagement.Application.Common.Interfaces;
 using ClinicManagement.Application.Patients.Commands.CreatePatient;
 using ClinicManagement.Application.Patients.Queries.GetPatientById;
 using ClinicManagement.Application.Patients.Queries.GetPatients;
+using ClinicManagement.Infrastructure.Messaging;
 using ClinicManagement.Infrastructure.Persistence;
 using ClinicManagement.Infrastructure.Repositories;
 using ClinicManagement.Shared;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -48,6 +50,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+// Messaging — publish-only, no consumers in this service
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        var host = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
+        var user = builder.Configuration["RabbitMQ:Username"] ?? "guest";
+        var pass = builder.Configuration["RabbitMQ:Password"] ?? "guest";
+
+        cfg.Host(host, "/", h =>
+        {
+            h.Username(user);
+            h.Password(pass);
+        });
+
+        cfg.ConfigureEndpoints(ctx);
+    });
+});
+builder.Services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
 // Repositories
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();

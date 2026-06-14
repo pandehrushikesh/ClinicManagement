@@ -5,6 +5,7 @@
     <Project Path="src/ClinicManagement.AuthService/ClinicManagement.AuthService.csproj" />
     <Project Path="src/ClinicManagement.Domain/ClinicManagement.Domain.csproj" />
     <Project Path="src/ClinicManagement.Infrastructure/ClinicManagement.Infrastructure.csproj" />
+    <Project Path="src/ClinicManagement.NotificationService/ClinicManagement.NotificationService.csproj" />
     <Project Path="src/ClinicManagement.Shared/ClinicManagement.Shared.csproj" />
   </Folder>
   <Folder Name="/tests/">

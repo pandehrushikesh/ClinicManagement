@@ -2,6 +2,7 @@ using ClinicManagement.Application.Common.DTOs;
 using ClinicManagement.Application.Common.Interfaces;
 using ClinicManagement.Domain.Entities;
 using ClinicManagement.Domain.Exceptions;
+using ClinicManagement.Shared.Events;
 
 namespace ClinicManagement.Application.Appointments.Commands.ScheduleAppointment;
 
@@ -10,15 +11,18 @@ public class ScheduleAppointmentCommandHandler
     private readonly IAppointmentRepository _appointments;
     private readonly IPatientRepository _patients;
     private readonly IDoctorRepository _doctors;
+    private readonly IEventPublisher _publisher;
 
     public ScheduleAppointmentCommandHandler(
         IAppointmentRepository appointments,
         IPatientRepository patients,
-        IDoctorRepository doctors)
+        IDoctorRepository doctors,
+        IEventPublisher publisher)
     {
         _appointments = appointments;
         _patients = patients;
         _doctors = doctors;
+        _publisher = publisher;
     }
 
     public async Task<AppointmentDto> Handle(ScheduleAppointmentCommand command, CancellationToken cancellationToken = default)
@@ -43,6 +47,16 @@ public class ScheduleAppointmentCommandHandler
 
         await _appointments.AddAsync(appointment, cancellationToken);
         await _appointments.SaveChangesAsync(cancellationToken);
+
+        await _publisher.PublishAsync(new AppointmentScheduledEvent(
+            appointment.Id,
+            patient.Id,
+            patient.FullName,
+            doctor.Id,
+            doctor.FullName,
+            appointment.ScheduledAt,
+            appointment.DurationMinutes,
+            DateTime.UtcNow), cancellationToken);
 
         return appointment.ToDto();
     }

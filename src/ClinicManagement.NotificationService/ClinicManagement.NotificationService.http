@@ -1,0 +1,6 @@
+@ClinicManagement.NotificationService_HostAddress = http://localhost:5078
+
+GET {{ClinicManagement.NotificationService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

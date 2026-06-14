@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClinicManagement.Domain\ClinicManagement.Domain.csproj" />
+    <ProjectReference Include="..\ClinicManagement.Shared\ClinicManagement.Shared.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
